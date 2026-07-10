@@ -15,9 +15,29 @@ git submodule add <cherrypit-core remote-or-path> src/_core
 git -C src/_core checkout <pinned SHA>
 git add .gitmodules src/_core
 ```
-The module puts `src/_core` on `sys.path` (it already inserts `src/` for `import credentials`), so
-`import cherrypit` resolves. A fresh `git clone --recursive` pulls the pinned SHA; a non-recursive
-clone is fixed by `git submodule update --init`.
+To resolve `import cherrypit` with no install, the **credentials shim bootstraps `src/_core` onto
+`sys.path`** at its top (before importing `cherrypit`). Because `session.py` imports `credentials`
+first, and nothing else imports `cherrypit` directly, this single bootstrap covers the whole process —
+no edits to the many entry points (`tt.py`, `streamer.py`, `paper_loop.py`, …):
+
+```python
+# top of src/credentials.py, right after `from __future__ import annotations`
+import sys as _sys
+from pathlib import Path as _Path
+_CORE = _Path(__file__).resolve().parent / "_core"
+if _CORE.is_dir() and str(_CORE) not in _sys.path:
+    _sys.path.insert(0, str(_CORE))
+```
+
+A fresh `git clone --recursive` pulls the pinned SHA and it just works; a non-recursive clone is fixed
+by `git submodule update --init`.
+
+**Gotcha — pytest collection collision.** `src/_core` ships cherrypit-core's *own* `tests/`
+(`test_credentials.py` / `test_session.py`), so a consumer whose pytest isn't scoped will discover both
+copies and fail collection with "import file mismatch". Ensure the consumer's pytest config **excludes
+the submodule**: `testpaths = ["tests"]` (MEIC already had this in `pyproject.toml`) or a root
+`pytest.ini` with `testpaths = tests` + `norecursedirs = src/_core` + `addopts = --ignore=src/_core`
+(added to EarningsAgent).
 
 ## 2. Replace each module's `credentials.py` with a thin shim
 The shim preserves the exact module-level API every call site already imports

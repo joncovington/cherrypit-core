@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cherrypit-core"
+version = "0.1.0"
+description = "Shared core library for the Cherrypick trading suite (auth, dxfeed, fees, risk, calendar, paper, gex, ...)."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["keyring>=24"]
+
+# tastytrade is a runtime dependency of consumers, not of importing the library: auth.session
+# imports it lazily (only when building a real session), so cherrypit-core imports and unit-tests
+# without it. Install the `broker` extra where a live Session is actually constructed.
+[project.optional-dependencies]
+broker = ["tastytrade>=12"]
+dev = ["pytest>=8"]
+
+[tool.setuptools.packages.find]
+include = ["cherrypit*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

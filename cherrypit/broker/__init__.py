@@ -184,22 +184,64 @@ def _buying_power_summary(preflight: Any) -> dict:
     return summary
 
 
+async def _deploy_governor(account: Any, session: Any, preflight: Any, limit_pct: float,
+                           get_balances: Callable[..., Any] | None) -> tuple[bool, dict]:
+    """Evaluate the account deploy-limit cap for a preflighted order via `risk.evaluate_deploy_limit`.
+
+    Reads the order's buying-power consumption from the preflight and the account's live deployed /
+    available buying power from `get_balances`. **Fail-closed**: if the buying-power change or the
+    balance fields can't be read, returns `(False, {"deploy_governor": "unverified", ...})` so the
+    caller blocks rather than deploying capital it couldn't check against the cap.
+    """
+    from cherrypit import risk  # sibling package; imported here to avoid any load-order coupling
+
+    bpe = getattr(preflight, "buying_power_effect", None)
+    change = getattr(bpe, "change_in_buying_power", None) if bpe is not None else None
+    if change is None:
+        return False, {"deploy_governor": "unverified", "reason": "no buying-power change in preflight"}
+
+    fetch = get_balances or (lambda a, s: a.get_balances(s))
+    try:
+        balances = await fetch(account, session)
+    except Exception as exc:  # noqa: BLE001 — fail-closed on any balance-fetch failure
+        return False, {"deploy_governor": "unverified", "reason": f"balances unavailable: {exc}"}
+
+    used = getattr(balances, "used_derivative_buying_power", None)
+    available = getattr(balances, "derivative_buying_power", None)
+    if used is None or available is None:
+        return False, {"deploy_governor": "unverified", "reason": "missing balance fields"}
+
+    consume = -Decimal(str(change))  # a debit (negative change) consumes buying power
+    allowed, info = risk.evaluate_deploy_limit(
+        Decimal(str(used)), Decimal(str(available)), consume, limit_pct)
+    return allowed, {"deploy_governor": "enforced", **info}
+
+
 async def place_order(account: Any, session: Any, order: Any, *, live: bool,
-                      serialize: Callable[[Any], Any] | None = None) -> dict:
+                      serialize: Callable[[Any], Any] | None = None,
+                      deploy_limit_pct: float | None = None,
+                      get_balances: Callable[..., Any] | None = None) -> dict:
     """Preflight an order (always a dry-run first), then submit it live **only** if `live` is True
     and the preflight reported no errors. Unifies the submission core of both repos'
     `cmd_execute_trade`; the CLI gating (how `--live`/`--dry_run` map to `live`), the
     live-trading-enabled check, and try/except shaping stay in the caller.
 
     Safety invariant: a live order (`dry_run=False`) is placed on exactly one path — `live=True`
-    with an error-free preflight. Any preflight error returns early; `live=False` returns the
-    dry-run result without a second call.
+    with an error-free preflight **and** (when enabled) an allowing deploy governor.
+
+    Deploy governor (opt-in, off by default): pass `deploy_limit_pct > 0` to cap how much of the
+    account's buying power may be deployed at once (see `cherrypit.risk`). It is **fail-closed** —
+    if account state can't be verified, a live order is blocked. Enforcement (blocking) happens only
+    on a live submit; on a dry run the governor verdict is computed and attached as `governor` for
+    visibility but never blocks. `get_balances` (async `(account, session) -> balances`) overrides
+    the default `account.get_balances(session)`, for tests.
 
     Returns a JSON-safe dict (`serialize` shapes the raw tastytrade preflight/response objects;
-    defaults to identity):
-      - preflight errors: {ok: False, error: "pre-flight validation failed", problems, buying_power}
-      - dry run:          {ok: True, dry_run: True,  account_number, buying_power, response}
-      - live:             {ok: True, dry_run: False, account_number, buying_power, response}
+    defaults to identity). Includes a `governor` key whenever the governor ran:
+      - preflight errors:  {ok: False, error: "pre-flight validation failed", problems, buying_power}
+      - governor blocked:  {ok: False, error: "account deploy limit ...", governor, buying_power}
+      - dry run:           {ok: True, dry_run: True,  account_number, buying_power, response[, governor]}
+      - live:              {ok: True, dry_run: False, account_number, buying_power, response[, governor]}
     """
     serialize = serialize or (lambda x: x)
 
@@ -210,10 +252,27 @@ async def place_order(account: Any, session: Any, order: Any, *, live: bool,
         return {"ok": False, "error": "pre-flight validation failed",
                 "problems": errors, "buying_power": bp_summary}
 
+    governor_info = None
+    if deploy_limit_pct is not None and deploy_limit_pct > 0:
+        allowed, governor_info = await _deploy_governor(
+            account, session, preflight, deploy_limit_pct, get_balances)
+        if live and not allowed:
+            reason = ("account deploy limit exceeded"
+                      if governor_info.get("deploy_governor") == "enforced"
+                      else "account deploy limit: could not verify account state")
+            return {"ok": False, "error": reason,
+                    "governor": governor_info, "buying_power": bp_summary}
+
     if not live:
-        return {"ok": True, "dry_run": True, "account_number": account.account_number,
-                "buying_power": bp_summary, "response": serialize(preflight)}
+        result = {"ok": True, "dry_run": True, "account_number": account.account_number,
+                  "buying_power": bp_summary, "response": serialize(preflight)}
+        if governor_info is not None:
+            result["governor"] = governor_info
+        return result
 
     response = await account.place_order(session, order, dry_run=False)
-    return {"ok": True, "dry_run": False, "account_number": account.account_number,
-            "buying_power": bp_summary, "response": serialize(response)}
+    result = {"ok": True, "dry_run": False, "account_number": account.account_number,
+              "buying_power": bp_summary, "response": serialize(response)}
+    if governor_info is not None:
+        result["governor"] = governor_info
+    return result

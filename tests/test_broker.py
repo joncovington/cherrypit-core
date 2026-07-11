@@ -215,17 +215,31 @@ class FakePreflight:
         self.tag = tag
 
 
+class FakeBalances:
+    def __init__(self, used, available):
+        self.used_derivative_buying_power = used
+        self.derivative_buying_power = available
+
+
 class FakeSubmitAccount:
     """Records every place_order call so tests can assert whether a live submit happened."""
-    def __init__(self, preflight, live_response=None, account_number="A1"):
+    def __init__(self, preflight, live_response=None, account_number="A1", balances=None,
+                 balances_raise=False):
         self.account_number = account_number
         self._preflight = preflight
         self._live_response = live_response or FakePreflight(tag="live")
+        self._balances = balances
+        self._balances_raise = balances_raise
         self.calls = []  # list of dry_run flags, in order
 
     async def place_order(self, session, order, dry_run):
         self.calls.append(dry_run)
         return self._preflight if dry_run else self._live_response
+
+    async def get_balances(self, session):
+        if self._balances_raise:
+            raise RuntimeError("balances endpoint down")
+        return self._balances
 
 
 def test_place_order_dry_run_never_submits_live():
@@ -265,3 +279,80 @@ def test_place_order_default_serialize_is_identity():
     acct = FakeSubmitAccount(pf)
     out = _run(broker.place_order(acct, "sess", "order", live=False))
     assert out["response"] is pf  # raw object passed through when no serialize given
+
+
+# --------------------------------------------------------------------------- place_order + governor
+def _acct(change, used, available, **kw):
+    # preflight whose order consumes -`change` BP, against an account with `used`/`available` BP
+    pf = FakePreflight(bpe=FakeBPE("x", "y", change))
+    return FakeSubmitAccount(pf, balances=FakeBalances(used, available), **kw)
+
+
+def test_governor_off_by_default_never_fetches_balances():
+    acct = _acct(change="-1000", used="9999999", available="0")  # would blow any cap if consulted
+    out = _run(broker.place_order(acct, "sess", "order", live=True))  # no deploy_limit_pct
+    assert out["ok"] is True and out["dry_run"] is False
+    assert "governor" not in out
+    assert acct.calls == [True, False]  # live submit happened; governor never ran
+
+
+def test_governor_allows_within_cap_and_submits_live():
+    # capacity 10000, 50% cap = 5000; used 1000 + consume 1000 = 2000 <= 5000
+    acct = _acct(change="-1000", used="1000", available="9000")
+    out = _run(broker.place_order(acct, "sess", "order", live=True, deploy_limit_pct=50))
+    assert out["ok"] is True and out["dry_run"] is False
+    assert out["governor"]["deploy_governor"] == "enforced"
+    assert out["governor"]["account_deployed_after"] == "2000"
+    assert acct.calls == [True, False]
+
+
+def test_governor_blocks_over_cap_and_never_submits_live():
+    # capacity 10000, 50% cap = 5000; used 4800 + consume 500 = 5300 > 5000
+    acct = _acct(change="-500", used="4800", available="5200")
+    out = _run(broker.place_order(acct, "sess", "order", live=True, deploy_limit_pct=50))
+    assert out["ok"] is False
+    assert out["error"] == "account deploy limit exceeded"
+    assert out["governor"]["deploy_governor"] == "enforced"
+    # safety: blocked before the live submit
+    assert acct.calls == [True]
+
+
+def test_governor_fail_closed_when_change_unknown():
+    # preflight has no buying_power_effect -> change unverifiable -> block on live
+    acct = FakeSubmitAccount(FakePreflight(bpe=None), balances=FakeBalances("0", "10000"))
+    out = _run(broker.place_order(acct, "sess", "order", live=True, deploy_limit_pct=50))
+    assert out["ok"] is False
+    assert out["error"] == "account deploy limit: could not verify account state"
+    assert out["governor"]["deploy_governor"] == "unverified"
+    assert acct.calls == [True]
+
+
+def test_governor_fail_closed_when_balances_unavailable():
+    acct = FakeSubmitAccount(FakePreflight(bpe=FakeBPE("x", "y", "-100")), balances_raise=True)
+    out = _run(broker.place_order(acct, "sess", "order", live=True, deploy_limit_pct=50))
+    assert out["ok"] is False
+    assert out["error"] == "account deploy limit: could not verify account state"
+    assert acct.calls == [True]
+
+
+def test_governor_on_dry_run_reports_but_does_not_block():
+    # over-cap order, but live=False -> informational governor, no block, no live submit
+    acct = _acct(change="-9000", used="0", available="10000")  # consume 9000 > 5000 cap
+    out = _run(broker.place_order(acct, "sess", "order", live=False, deploy_limit_pct=50))
+    assert out["ok"] is True and out["dry_run"] is True
+    assert out["governor"]["deploy_governor"] == "enforced"
+    assert out["governor"]["account_deployed_after"] == "9000"
+    assert acct.calls == [True]  # dry run only
+
+
+def test_governor_get_balances_override_is_used():
+    calls = {"n": 0}
+
+    async def fake_get_balances(account, session):
+        calls["n"] += 1
+        return FakeBalances("1000", "9000")
+
+    acct = FakeSubmitAccount(FakePreflight(bpe=FakeBPE("x", "y", "-1000")))  # no balances on account
+    out = _run(broker.place_order(acct, "sess", "order", live=True, deploy_limit_pct=50,
+                                  get_balances=fake_get_balances))
+    assert out["ok"] is True and calls["n"] == 1

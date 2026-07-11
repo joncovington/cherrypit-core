@@ -18,7 +18,8 @@ that core code never forces a network dependency at import time.
 from __future__ import annotations
 
 import threading
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any
 
 from .credentials import CLIENT_SECRET, REFRESH_TOKEN, CredentialError, CredentialStore
 
@@ -33,7 +34,7 @@ def _default_session_factory(client_secret: str, refresh_token: str, is_test: bo
 
 class SessionManager:
     def __init__(self, credentials: CredentialStore, thread_local: bool = False,
-                 session_factory: Optional[SessionFactory] = None, is_test: bool = False):
+                 session_factory: SessionFactory | None = None, is_test: bool = False):
         self._creds = credentials
         self._thread_local = thread_local
         self._factory = session_factory or _default_session_factory

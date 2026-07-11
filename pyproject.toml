@@ -15,7 +15,7 @@ dependencies = ["keyring>=24"]
 # without it. Install the `broker` extra where a live Session is actually constructed.
 [project.optional-dependencies]
 broker = ["tastytrade>=12"]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "ruff>=0.6"]
 
 [tool.setuptools.packages.find]
 include = ["cherrypit*"]
@@ -23,3 +23,11 @@ include = ["cherrypit*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+
+[tool.ruff.lint]
+# E/W pycodestyle, F pyflakes, I import-sorting, UP pyupgrade, B bugbear — high-signal, low-noise.
+select = ["E", "F", "I", "W", "UP", "B"]

@@ -17,7 +17,8 @@ tests without the broker SDK or a network.
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Awaitable, Callable, Optional
+from collections.abc import Callable
+from typing import Any
 
 # A streamer factory turns a broker session into an async-context-manager DXLink streamer exposing
 # `await subscribe(event_cls, symbols)` and `listen(event_cls)` (an async iterator of events).
@@ -41,8 +42,8 @@ def _default_streamer_factory(session: Any) -> Any:
 
 
 async def collect_events(session: Any, event_cls: Any, symbols: list[str], timeout: float,
-                         extract: Optional[Extract] = None,
-                         streamer_factory: Optional[StreamerFactory] = None) -> dict:
+                         extract: Extract | None = None,
+                         streamer_factory: StreamerFactory | None = None) -> dict:
     """Subscribe to `event_cls` for `symbols`, collecting the latest value per symbol until either all
     symbols have reported or `timeout` seconds elapse. Returns {event_symbol: value}. `value` is the
     raw event unless `extract` is given, in which case `extract(event)` is stored (skipped when None).

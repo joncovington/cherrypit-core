@@ -57,7 +57,8 @@ SENTINEL_CLS = object()  # event_cls is opaque to collect_events
 def test_collects_events_keyed_by_symbol():
     events = [FakeEvent("A"), FakeEvent("B")]
     streamer = FakeStreamer(events)
-    out = _run(dxfeed.collect_events("sess", SENTINEL_CLS, ["A", "B"], 1.0, streamer_factory=_factory(streamer)))
+    out = _run(dxfeed.collect_events("sess", SENTINEL_CLS, ["A", "B"], 1.0,
+                                     streamer_factory=_factory(streamer)))
     assert set(out) == {"A", "B"}
     assert out["A"] is events[0]
     assert streamer.subscribed == [(SENTINEL_CLS, ["A", "B"])]
@@ -89,7 +90,8 @@ def test_empty_symbols_returns_empty_without_subscribing():
 
 def test_falsy_symbols_are_filtered():
     streamer = FakeStreamer([FakeEvent("X")])
-    out = _run(dxfeed.collect_events("s", SENTINEL_CLS, [None, "", "X"], 1.0, streamer_factory=_factory(streamer)))
+    out = _run(dxfeed.collect_events("s", SENTINEL_CLS, [None, "", "X"], 1.0,
+                                     streamer_factory=_factory(streamer)))
     assert set(out) == {"X"}
     assert streamer.subscribed == [(SENTINEL_CLS, ["X"])]
 
@@ -121,7 +123,8 @@ def test_subscribe_error_is_swallowed():
     assert out == {}
 
 
-@pytest.mark.parametrize("value,expected", [("3.5", 3.5), (7, 7.0), (None, None), ("x", None), (float("nan"), float("nan"))])
+@pytest.mark.parametrize("value,expected", [("3.5", 3.5), (7, 7.0), (None, None), ("x", None),
+                                            (float("nan"), float("nan"))])
 def test_num(value, expected):
     result = dxfeed._num(value)
     if isinstance(expected, float) and expected != expected:  # NaN

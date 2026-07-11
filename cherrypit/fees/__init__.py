@@ -56,7 +56,8 @@ def _apply_costs(order: dict, leg_quotes: list[dict], quantity: int, config: dic
                  commission_key: str) -> dict:
     costs_cfg = _costs_config(config)
     num_legs = _leg_count(order)
-    commission = _commission(num_legs, quantity, costs_cfg[commission_key], costs_cfg["commission_cap_per_leg"])
+    commission = _commission(num_legs, quantity, costs_cfg[commission_key],
+                             costs_cfg["commission_cap_per_leg"])
     pass_through = _pass_through(num_legs, quantity, costs_cfg["clearing_fee_per_contract"],
                                  costs_cfg["regulatory_fee_per_contract"])
     slippage = _slippage(leg_quotes, quantity, costs_cfg["slippage_frac_of_spread"])

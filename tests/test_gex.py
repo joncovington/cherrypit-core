@@ -25,7 +25,8 @@ def test_interpolate_zero_gamma_crosses_between_two_strikes():
 
 
 def test_interpolate_zero_gamma_none_when_no_crossing():
-    assert gex.interpolate_zero_gamma([{"strike": 595, "net_gex": 100}, {"strike": 600, "net_gex": 50}]) is None
+    assert gex.interpolate_zero_gamma(
+        [{"strike": 595, "net_gex": 100}, {"strike": 600, "net_gex": 50}]) is None
 
 
 def test_interpolate_zero_gamma_uses_cumulative_not_adjacent():

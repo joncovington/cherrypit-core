@@ -21,12 +21,14 @@ cherrypit/
   auth/        credentials (CredentialStore: param service + legacy fallback)
                session     (SessionManager: param thread_local, injected session factory)
   broker/      account primitives (resolve/list/count, session injected) + option-chain
-               strike helpers. Read side only; the order write path stays module-local for now.
+               strike helpers + order build/submit (build_order, place_order). Submission is
+               fail-safe: a live order is placed only on a clean dry-run preflight.
   calendar/    trading-day / expiration calendar
   dxfeed/      on-demand DXLink collectors (quotes/greeks/last/open-interest/volume; session injected)
   fees/        commission + fee/slippage cost model
   gex/         gamma-exposure math
-  # next: risk/, profiles/, paper/, db/, logging/, viz/
+  risk/        account-level risk primitives (evaluate_deploy_limit — fail-closed BP deploy cap)
+  # next: profiles/, paper/, db/, logging/, viz/
 ```
 
 ## How consumers use it

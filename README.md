@@ -28,7 +28,8 @@ cherrypit/
   fees/        commission + fee/slippage cost model
   gex/         gamma-exposure math
   risk/        account-level risk primitives (evaluate_deploy_limit — fail-closed BP deploy cap)
-  # next: profiles/, paper/, db/, logging/, viz/
+  db/          SQLite engine mechanics: connect (dir/row_factory/pragmas) + additive migrations
+  # next: profiles/, paper/, logging/, viz/
 ```
 
 ## How consumers use it

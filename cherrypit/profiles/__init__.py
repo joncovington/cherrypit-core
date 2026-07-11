@@ -10,8 +10,9 @@ Phase B adds the *attribution contract* (`attribution_tag`): every trade row car
 named risk profile (or parallel-shadow paper book) that opened it, and reporting groups P&L by that
 tag. Phase C adds the calibration harness's *comparison engine* (`compare_profiles`): group tagged
 trade rows by their attribution tag and apply a module-injected summary per group — the metric math
-stays per-module (it is domain-divergent) while the grouping orchestration is shared. The promotion
-advisor is a later phase.
+stays per-module (it is domain-divergent) while the grouping orchestration is shared. Phase D adds the
+*promotion advisor* (`recommend_promotion`): codify the documented risk-ladder progression into a
+pure, advisory, human-gated recommendation — it never mutates config or switches live risk.
 """
 
 from __future__ import annotations
@@ -92,6 +93,72 @@ def compare_profiles(rows, *, tag_key: str, summarize, untagged: str = UNTAGGED)
         tag = attribution_tag(r[tag_key], untagged=untagged)
         groups.setdefault(tag, []).append(r)
     return {tag: summarize(group) for tag, group in groups.items()}
+
+
+# Documented promotion rule (MEICAgent docs/risk-profiles.md "Recommended progression"):
+# graduate one rung up the risk ladder only after a minimum observation window, a sustained win
+# rate, and a sufficient sample. Overridable per call; the top rung is a deliberate human-chosen
+# experiment ("only deliberately", "not a permanent mode"), so it is never auto-recommended.
+PROMOTION_RULE = {"min_days": 14, "min_win_rate": 0.60, "min_sample": 20}
+
+
+def recommend_promotion(reading: Mapping, current: str, ladder, *, rule: Mapping | None = None,
+                        deliberate_only=()) -> dict:
+    """Advisory-only: should `current` graduate one rung up `ladder`? (plan Part 10 Phase D)
+
+    Codifies the documented risk-ladder progression (MEICAgent docs/risk-profiles.md) as a pure
+    recommendation — it NEVER mutates config or switches the live profile. Auto-promoting live risk
+    from paper results is a capital-authority action, kept human-gated (consistent with the
+    governor/watchdog fail-closed philosophy); the caller/human applies the recommendation.
+
+    - `reading`: the current profile's calibration metrics (e.g. one entry from `compare_profiles`),
+      normalized by the caller to a mapping with `"sample"` (int), `"win_rate"` (0..1, or None if
+      too few trades), and `"days"` (distinct sessions observed). The caller extracts these because
+      metric shapes are module-specific (Part 10).
+    - `current`: the active profile tag; must be in `ladder`.
+    - `ladder`: the risk ladder, most→least conservative
+      (e.g. ["conservative", "moderate", "aggressive", "very-aggressive"]).
+    - `rule`: threshold overrides merged onto `PROMOTION_RULE`.
+    - `deliberate_only`: rung tags never auto-recommended (a human opts in explicitly); when the
+      next rung is one of these the verdict is "hold" with that reason.
+
+    Returns `{current, next, eligible, checks, recommendation, reason}`: `checks` maps each threshold
+    name to `{"value", "threshold", "pass"}`; `recommendation` is `"hold"` or `"graduate:<next>"`;
+    `eligible` is True only when every check passes AND the next rung is auto-recommendable.
+    """
+    ladder = list(ladder)
+    if current not in ladder:
+        raise ValueError(f"current profile {current!r} not in ladder {ladder}")
+    thresholds = {**PROMOTION_RULE, **(rule or {})}
+    idx = ladder.index(current)
+    nxt = ladder[idx + 1] if idx + 1 < len(ladder) else None
+
+    def _check(value, threshold):
+        return {"value": value, "threshold": threshold,
+                "pass": value is not None and value >= threshold}
+
+    checks = {
+        "sample": _check(reading.get("sample"), thresholds["min_sample"]),
+        "win_rate": _check(reading.get("win_rate"), thresholds["min_win_rate"]),
+        "days": _check(reading.get("days"), thresholds["min_days"]),
+    }
+
+    def _verdict(eligible, recommendation, reason):
+        return {"current": current, "next": nxt, "eligible": eligible,
+                "checks": checks, "recommendation": recommendation, "reason": reason}
+
+    if nxt is None:
+        return _verdict(False, "hold", f"{current} is the top of the ladder; nothing to graduate to.")
+    if nxt in deliberate_only:
+        return _verdict(False, "hold", f"graduating to {nxt} is a deliberate, human-chosen "
+                        "experiment -- never auto-recommended.")
+    if all(c["pass"] for c in checks.values()):
+        return _verdict(True, f"graduate:{nxt}",
+                        f"{current} met every threshold over {reading.get('days')} sessions "
+                        f"(win rate {reading.get('win_rate')}, {reading.get('sample')} trades); "
+                        f"eligible to graduate to {nxt}.")
+    failed = [name for name, c in checks.items() if not c["pass"]]
+    return _verdict(False, "hold", f"hold {current}: {', '.join(failed)} below threshold.")
 
 
 def merge_profile(base: Mapping, profile_def: Mapping, *, reserved_keys: tuple = (),

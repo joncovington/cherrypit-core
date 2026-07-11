@@ -114,6 +114,74 @@ def test_compare_profiles_empty_rows():
     assert profiles.compare_profiles([], tag_key="risk_profile", summarize=_count) == {}
 
 
+# --------------------------------------------------------------------------- recommend_promotion
+_LADDER = ["conservative", "moderate", "aggressive", "very-aggressive"]
+_GOOD = {"sample": 40, "win_rate": 0.65, "days": 20}
+
+
+def test_recommend_promotion_eligible_when_all_thresholds_met():
+    v = profiles.recommend_promotion(_GOOD, "conservative", _LADDER)
+    assert v["eligible"] is True
+    assert v["next"] == "moderate"
+    assert v["recommendation"] == "graduate:moderate"
+    assert all(c["pass"] for c in v["checks"].values())
+
+
+def test_recommend_promotion_holds_when_win_rate_below_threshold():
+    v = profiles.recommend_promotion({"sample": 40, "win_rate": 0.55, "days": 20},
+                                     "conservative", _LADDER)
+    assert v["eligible"] is False
+    assert v["recommendation"] == "hold"
+    assert v["checks"]["win_rate"]["pass"] is False
+    assert "win_rate" in v["reason"]
+
+
+def test_recommend_promotion_holds_when_sample_or_days_short():
+    v = profiles.recommend_promotion({"sample": 5, "win_rate": 0.9, "days": 3},
+                                     "conservative", _LADDER)
+    assert v["eligible"] is False
+    assert v["checks"]["sample"]["pass"] is False
+    assert v["checks"]["days"]["pass"] is False
+
+
+def test_recommend_promotion_none_win_rate_fails_closed():
+    # too few trades for a win rate -> None must not count as passing
+    v = profiles.recommend_promotion({"sample": 40, "win_rate": None, "days": 20},
+                                     "conservative", _LADDER)
+    assert v["checks"]["win_rate"]["pass"] is False
+    assert v["eligible"] is False
+
+
+def test_recommend_promotion_top_rung_holds():
+    v = profiles.recommend_promotion(_GOOD, "very-aggressive", _LADDER)
+    assert v["next"] is None
+    assert v["eligible"] is False
+    assert v["recommendation"] == "hold"
+    assert "top of the ladder" in v["reason"]
+
+
+def test_recommend_promotion_deliberate_only_next_never_auto_recommended():
+    # aggressive fully qualifies, but very-aggressive is opt-in-only -> hold, not graduate
+    v = profiles.recommend_promotion(_GOOD, "aggressive", _LADDER,
+                                     deliberate_only=("very-aggressive",))
+    assert v["next"] == "very-aggressive"
+    assert v["eligible"] is False
+    assert v["recommendation"] == "hold"
+    assert "deliberate" in v["reason"]
+
+
+def test_recommend_promotion_rule_override():
+    v = profiles.recommend_promotion({"sample": 40, "win_rate": 0.65, "days": 20},
+                                     "conservative", _LADDER, rule={"min_win_rate": 0.70})
+    assert v["checks"]["win_rate"]["threshold"] == 0.70
+    assert v["checks"]["win_rate"]["pass"] is False
+
+
+def test_recommend_promotion_unknown_current_raises():
+    with pytest.raises(ValueError, match="not in ladder"):
+        profiles.recommend_promotion(_GOOD, "ghost", _LADDER)
+
+
 # --------------------------------------------------------------------------- merge_profile (flat / MEIC)
 def test_merge_profile_flat_override_skips_underscore_and_leaves_base():
     base = {"min_iv_rank": 0.3, "max_ics": 4, "force_close_time": "15:45"}

@@ -20,7 +20,13 @@ calendar, GEX, paper, and reporting concerns are implemented **once**.
 cherrypit/
   auth/        credentials (CredentialStore: param service + legacy fallback)
                session     (SessionManager: param thread_local, injected session factory)
-  # next: dxfeed/, calendar/, fees/, gex/, risk/, profiles/, paper/, db/, logging/, viz/
+  broker/      account primitives (resolve/list/count, session injected) + option-chain
+               strike helpers. Read side only; the order write path stays module-local for now.
+  calendar/    trading-day / expiration calendar
+  dxfeed/      on-demand DXLink collectors (quotes/greeks/last/open-interest/volume; session injected)
+  fees/        commission + fee/slippage cost model
+  gex/         gamma-exposure math
+  # next: risk/, profiles/, paper/, db/, logging/, viz/
 ```
 
 ## How consumers use it

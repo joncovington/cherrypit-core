@@ -197,3 +197,71 @@ def test_build_order_stop_trigger_passed_through_when_present():
     # ...and omitted entirely when absent (EarningsAgent never sets it)
     order2 = broker.build_order({"legs": [_leg()]}, order_ns=_fake_order_ns())
     assert "stop_trigger" not in order2.__dict__
+
+
+# --------------------------------------------------------------------------- place_order
+class FakeBPE:
+    def __init__(self, current, new, change):
+        self.current_buying_power = current
+        self.new_buying_power = new
+        self.change_in_buying_power = change
+
+
+class FakePreflight:
+    def __init__(self, errors=(), warnings=(), bpe=None, tag="preflight"):
+        self.errors = list(errors)
+        self.warnings = list(warnings)
+        self.buying_power_effect = bpe
+        self.tag = tag
+
+
+class FakeSubmitAccount:
+    """Records every place_order call so tests can assert whether a live submit happened."""
+    def __init__(self, preflight, live_response=None, account_number="A1"):
+        self.account_number = account_number
+        self._preflight = preflight
+        self._live_response = live_response or FakePreflight(tag="live")
+        self.calls = []  # list of dry_run flags, in order
+
+    async def place_order(self, session, order, dry_run):
+        self.calls.append(dry_run)
+        return self._preflight if dry_run else self._live_response
+
+
+def test_place_order_dry_run_never_submits_live():
+    acct = FakeSubmitAccount(FakePreflight(bpe=FakeBPE("1000", "800", "-200")))
+    out = _run(broker.place_order(acct, "sess", "order", live=False, serialize=lambda p: p.tag))
+    assert out["ok"] is True and out["dry_run"] is True
+    assert out["account_number"] == "A1"
+    assert out["response"] == "preflight"
+    assert out["buying_power"]["change_in_buying_power"] == "-200"
+    # safety: only the dry-run preflight call, never a live submit
+    assert acct.calls == [True]
+
+
+def test_place_order_preflight_errors_block_submission():
+    acct = FakeSubmitAccount(FakePreflight(errors=["insufficient buying power"]))
+    out = _run(broker.place_order(acct, "sess", "order", live=True, serialize=lambda p: p.tag))
+    assert out["ok"] is False
+    assert out["error"] == "pre-flight validation failed"
+    assert out["problems"] == ["insufficient buying power"]
+    # safety: even with live=True, an errored preflight must NOT place a live order
+    assert acct.calls == [True]
+
+
+def test_place_order_live_submits_after_clean_preflight():
+    acct = FakeSubmitAccount(FakePreflight(warnings=["near the close"]),
+                             live_response=FakePreflight(tag="live"))
+    out = _run(broker.place_order(acct, "sess", "order", live=True, serialize=lambda p: p.tag))
+    assert out["ok"] is True and out["dry_run"] is False
+    assert out["response"] == "live"
+    assert out["buying_power"]["warnings"] == ["near the close"]
+    # dry-run preflight first, then the live submit
+    assert acct.calls == [True, False]
+
+
+def test_place_order_default_serialize_is_identity():
+    pf = FakePreflight()
+    acct = FakeSubmitAccount(pf)
+    out = _run(broker.place_order(acct, "sess", "order", live=False))
+    assert out["response"] is pf  # raw object passed through when no serialize given

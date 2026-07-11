@@ -17,9 +17,14 @@ Order **construction** (`build_order`) is included — it's pure (a dict spec ->
 no network) and unifies both repos' `_build_order`. The tastytrade order classes are imported lazily
 (or injected as `order_ns`), so it too unit-tests without the broker SDK.
 
-Deliberately out of scope (module-local; a later, supervised cutover moves them): the order
-**submission** path (`execute_trade` — `account.place_order` dry-run/live) and MEIC's
-stream-cache-aware / futures chain fetch.
+Order **submission** (`place_order`) is also included — it unifies the preflight-then-optionally-live
+core of both repos' `cmd_execute_trade`, with the safety invariant that a live order is placed on
+exactly one path (`live=True` with an error-free preflight). The account is passed in (its
+`place_order` is mocked in tests), so this too runs offline. The per-module CLI gating
+(`--live`/`--dry_run`), the live-trading-enabled check, and try/except response shaping stay in the
+consumer.
+
+Deliberately out of scope (module-local): MEIC's stream-cache-aware / futures chain fetch.
 """
 
 from __future__ import annotations
@@ -163,3 +168,52 @@ def build_order(spec: dict, *, order_ns: Any = None) -> Any:
     if spec.get("stop_trigger") is not None:
         kwargs["stop_trigger"] = Decimal(str(spec["stop_trigger"]))
     return ns.NewOrder(**kwargs)
+
+
+# --------------------------------------------------------------------------- order submission
+def _buying_power_summary(preflight: Any) -> dict:
+    warnings = [str(w) for w in (getattr(preflight, "warnings", None) or [])]
+    summary: dict = {"warnings": warnings}
+    bpe = getattr(preflight, "buying_power_effect", None)
+    if bpe:
+        summary.update({
+            "current_buying_power": str(getattr(bpe, "current_buying_power", None)),
+            "new_buying_power": str(getattr(bpe, "new_buying_power", None)),
+            "change_in_buying_power": str(getattr(bpe, "change_in_buying_power", None)),
+        })
+    return summary
+
+
+async def place_order(account: Any, session: Any, order: Any, *, live: bool,
+                      serialize: Callable[[Any], Any] | None = None) -> dict:
+    """Preflight an order (always a dry-run first), then submit it live **only** if `live` is True
+    and the preflight reported no errors. Unifies the submission core of both repos'
+    `cmd_execute_trade`; the CLI gating (how `--live`/`--dry_run` map to `live`), the
+    live-trading-enabled check, and try/except shaping stay in the caller.
+
+    Safety invariant: a live order (`dry_run=False`) is placed on exactly one path — `live=True`
+    with an error-free preflight. Any preflight error returns early; `live=False` returns the
+    dry-run result without a second call.
+
+    Returns a JSON-safe dict (`serialize` shapes the raw tastytrade preflight/response objects;
+    defaults to identity):
+      - preflight errors: {ok: False, error: "pre-flight validation failed", problems, buying_power}
+      - dry run:          {ok: True, dry_run: True,  account_number, buying_power, response}
+      - live:             {ok: True, dry_run: False, account_number, buying_power, response}
+    """
+    serialize = serialize or (lambda x: x)
+
+    preflight = await account.place_order(session, order, dry_run=True)
+    errors = [str(e) for e in (getattr(preflight, "errors", None) or [])]
+    bp_summary = _buying_power_summary(preflight)
+    if errors:
+        return {"ok": False, "error": "pre-flight validation failed",
+                "problems": errors, "buying_power": bp_summary}
+
+    if not live:
+        return {"ok": True, "dry_run": True, "account_number": account.account_number,
+                "buying_power": bp_summary, "response": serialize(preflight)}
+
+    response = await account.place_order(session, order, dry_run=False)
+    return {"ok": True, "dry_run": False, "account_number": account.account_number,
+            "buying_power": bp_summary, "response": serialize(response)}

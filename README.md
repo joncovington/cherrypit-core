@@ -29,7 +29,8 @@ cherrypit/
   gex/         gamma-exposure math
   risk/        account-level risk primitives (evaluate_deploy_limit — fail-closed BP deploy cap)
   db/          SQLite engine mechanics: connect (dir/row_factory/pragmas) + additive migrations
-  # next: profiles/, paper/, logging/, viz/
+  profiles/    named-profile registry + merge engine (Phase A: load/select/merge; harness later)
+  # next: paper/ (+ profiles calibration harness, attribution, advisor)
 ```
 
 ## How consumers use it

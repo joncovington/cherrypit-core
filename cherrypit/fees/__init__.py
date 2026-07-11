@@ -94,14 +94,41 @@ TAF_PER_SELL_CONTRACT = 0.00329       # FINRA Trading Activity Fee — sell legs
 INDEX_EXCHANGE_FEE_PER_CONTRACT = {"SPX": 0.60, "XSP": 0.00, "NDX": 0.25, "RUT": 0.18}
 
 
-def ic_open_fee(symbol: str, quantity: int = 1, legs: int = 4, sell_legs: int = 2) -> float:
+def _ic_fee(symbol: str, quantity: int, legs: int, sell_legs: int, *,
+            commission_per_contract: float, ndigits: int) -> float:
+    """Shared IC fee stack: (commission + clearing + ORF + per-symbol index exchange fee) per leg
+    per contract, plus FINRA TAF on the sell legs. `commission_per_contract` is the only difference
+    between opening ($1) and closing/expiring ($0). `ndigits` sets the rounding precision."""
+    exch = INDEX_EXCHANGE_FEE_PER_CONTRACT.get(symbol.upper(), 0.0)
+    per_contract = commission_per_contract + CLEARING_FEE_PER_CONTRACT + ORF_PER_CONTRACT + exch
+    fee = legs * quantity * per_contract + sell_legs * quantity * TAF_PER_SELL_CONTRACT
+    return round(fee, ndigits)
+
+
+def ic_open_fee(symbol: str, quantity: int = 1, legs: int = 4, sell_legs: int = 2, *,
+                ndigits: int = 2) -> float:
     """Open-only fee for one iron condor (4 legs; 2 sells) at `quantity` contracts, per tastytrade's
     schedule including the per-symbol index exchange fee. Reproduces MEICAgent's
-    `fee_estimate_fallback_per_contract` constants (SPX 6.89, XSP 4.49, NDX 5.49, RUT 5.21, else 4.49)."""
-    exch = INDEX_EXCHANGE_FEE_PER_CONTRACT.get(symbol.upper(), 0.0)
-    per_contract = COMMISSION_OPEN_PER_CONTRACT + CLEARING_FEE_PER_CONTRACT + ORF_PER_CONTRACT + exch
-    fee = legs * quantity * per_contract + sell_legs * quantity * TAF_PER_SELL_CONTRACT
-    return round(fee, 2)
+    `fee_estimate_fallback_per_contract` constants (SPX 6.89, XSP 4.49, NDX 5.49, RUT 5.21, else 4.49).
+    `ndigits` chooses display precision: 2 (dollars-and-cents) by default; a caller wanting exact
+    sub-cent parity (e.g. MEIC's paper engine) passes 4."""
+    return _ic_fee(symbol, quantity, legs, sell_legs,
+                   commission_per_contract=COMMISSION_OPEN_PER_CONTRACT, ndigits=ndigits)
+
+
+def ic_close_fee(symbol: str, quantity: int = 1, legs: int = 4, sell_legs: int = 2, *,
+                 ndigits: int = 2) -> float:
+    """Fee to actively close IC legs — the same schedule MINUS the open-only $1/contract commission
+    (clearing + ORF + per-symbol index exchange fee per leg, plus FINRA TAF on the sell legs).
+    `legs`/`sell_legs` let a one-side close (2 legs, 1 sell) fee correctly vs a full 4-leg close
+    (4 legs, 2 sells). `ndigits` as in `ic_open_fee`."""
+    return _ic_fee(symbol, quantity, legs, sell_legs,
+                   commission_per_contract=0.0, ndigits=ndigits)
+
+
+def ic_expire_fee() -> float:
+    """Expired-OTM options incur no closing transaction, so no fee."""
+    return 0.0
 
 
 def ic_open_fee_table(symbols=("SPX", "XSP", "NDX", "RUT")) -> dict:

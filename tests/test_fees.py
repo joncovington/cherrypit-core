@@ -61,3 +61,29 @@ def test_ic_open_fee_table_matches_meic_fallback_dict():
 def test_ic_open_fee_scales_with_quantity():
     # Quantity 2 SPX IC: 4 legs * 2 * 1.72 + 2 sells * 2 * 0.00329 = 13.76 + 0.01316 -> 13.77.
     assert fees.ic_open_fee("SPX", quantity=2) == 13.77
+
+
+def test_ic_open_fee_ndigits_preserves_subcent_precision():
+    # MEIC's paper engine keeps 4dp; 2dp rounding would otherwise break fee linearity (x2).
+    assert fees.ic_open_fee("SPX", 1, ndigits=4) == 6.8866
+    assert fees.ic_open_fee("SPX", 2, ndigits=4) == fees.ic_open_fee("SPX", 1, ndigits=4) * 2
+
+
+def test_ic_close_fee_excludes_open_commission():
+    # Close = open minus the $1/contract commission on all 4 legs.
+    assert fees.ic_close_fee("SPX", 1) == pytest.approx(fees.ic_open_fee("SPX", 1) - 1.00 * 4, abs=0.01)
+
+
+def test_ic_close_fee_one_side_is_half_the_legs():
+    full = fees.ic_close_fee("SPX", 1, legs=4, sell_legs=2)
+    side = fees.ic_close_fee("SPX", 1, legs=2, sell_legs=1)
+    assert side < full
+    assert side == pytest.approx(full / 2, abs=0.01)
+
+
+def test_ic_close_fee_default_symbol_has_no_index_exchange_fee():
+    assert fees.ic_close_fee("AAPL") == fees.ic_close_fee("XSP")  # both 0.0 exchange fee
+
+
+def test_ic_expire_fee_is_zero():
+    assert fees.ic_expire_fee() == 0.0

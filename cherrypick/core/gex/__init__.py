@@ -1,4 +1,4 @@
-"""cherrypit.gex — standalone GEX (gamma exposure) engine.
+"""cherrypick.core.gex — standalone GEX (gamma exposure) engine.
 
 A pure function over an option-chain snapshot (per-strike gamma + open interest + spot); no broker, no
 streamer, no network — it consumes a snapshot the caller already fetched (same discipline as the paper

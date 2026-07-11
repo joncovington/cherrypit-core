@@ -1,4 +1,4 @@
-"""Tests for cherrypit.broker using a fake Account class + fake option objects.
+"""Tests for cherrypick.core.broker using a fake Account class + fake option objects.
 
 No tastytrade, no network: the account class is injected and options are hand-built. Async is driven
 via asyncio.run() so no pytest-asyncio plugin is required.
@@ -11,7 +11,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from cherrypit import broker
+from cherrypick.core import broker
 
 
 def _run(coro):

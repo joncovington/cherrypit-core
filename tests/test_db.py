@@ -1,8 +1,8 @@
-"""Tests for cherrypit.db — connection conventions + additive migrations, on real temp SQLite files."""
+"""Tests for cherrypick.core.db — connection conventions + additive migrations, on real temp SQLite files."""
 
 import sqlite3
 
-from cherrypit import db
+from cherrypick.core import db
 
 
 def test_connect_creates_parent_dir_and_row_factory(tmp_path):

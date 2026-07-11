@@ -1,11 +1,11 @@
-"""cherrypit.broker — shared tastytrade broker primitives (account resolution + option-chain helpers).
+"""cherrypick.core.broker — shared tastytrade broker primitives (account resolution + option-chain helpers).
 
 Unifies the read-side broker surface that MEICAgent's and EarningsAgent's `tt.py` share: the
 **verbatim-identical** account-resolution logic (`_get_account`), the near-identical connection /
 list-accounts logic (both built on `tastytrade.account.Account`), and the pure option-chain
 strike-window helpers (`_strike` / `_nearest_expiration` / `_atm_window`).
 
-Same design point as `cherrypit.dxfeed`: the broker **session is injected** (never fetched from a
+Same design point as `cherrypick.core.dxfeed`: the broker **session is injected** (never fetched from a
 consumer global — invariant: core never reaches back into a module), and `tastytrade` is imported
 lazily (and the account class is factory-injectable), so this module imports and unit-tests without
 the broker SDK or a network.
@@ -193,7 +193,7 @@ async def _deploy_governor(account: Any, session: Any, preflight: Any, limit_pct
     balance fields can't be read, returns `(False, {"deploy_governor": "unverified", ...})` so the
     caller blocks rather than deploying capital it couldn't check against the cap.
     """
-    from cherrypit import risk  # sibling package; imported here to avoid any load-order coupling
+    from cherrypick.core import risk  # sibling package; imported here to avoid any load-order coupling
 
     bpe = getattr(preflight, "buying_power_effect", None)
     change = getattr(bpe, "change_in_buying_power", None) if bpe is not None else None
@@ -230,7 +230,7 @@ async def place_order(account: Any, session: Any, order: Any, *, live: bool,
     with an error-free preflight **and** (when enabled) an allowing deploy governor.
 
     Deploy governor (opt-in, off by default): pass `deploy_limit_pct > 0` to cap how much of the
-    account's buying power may be deployed at once (see `cherrypit.risk`). It is **fail-closed** —
+    account's buying power may be deployed at once (see `cherrypick.core.risk`). It is **fail-closed** —
     if account state can't be verified, a live order is blocked. Enforcement (blocking) happens only
     on a live submit; on a dry run the governor verdict is computed and attached as `governor` for
     visibility but never blocks. `get_balances` (async `(account, session) -> balances`) overrides

@@ -1,10 +1,10 @@
-"""Tests for cherrypit.profiles — dual-source registry + the generalized merge engine."""
+"""Tests for cherrypick.core.profiles — dual-source registry + the generalized merge engine."""
 
 import json
 
 import pytest
 
-from cherrypit import profiles
+from cherrypick.core import profiles
 
 
 # --------------------------------------------------------------------------- load_profiles

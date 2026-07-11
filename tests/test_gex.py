@@ -1,10 +1,10 @@
-"""Tests for cherrypit.gex.
+"""Tests for cherrypick.core.gex.
 
 Ports MEICAgent's gex_math golden-master cases (dollar_gamma / interpolate_zero_gamma) and adds a
 full compute_gex profile check with hand-computed values.
 """
 
-from cherrypit import gex
+from cherrypick.core import gex
 
 
 # --- dollar_gamma / interpolate_zero_gamma (ported golden master) -------------------------------

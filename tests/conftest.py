@@ -1,4 +1,4 @@
-"""Shared fixtures for cherrypit-core tests.
+"""Shared fixtures for cherrypick-core tests.
 
 Unit lane only: no real keyring backend, no broker, no network. An in-memory keyring stand-in lets
 the credential + session logic be tested deterministically and offline.
@@ -9,7 +9,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-# Make the flat-layout `cherrypit` package importable without an install.
+# Make the `cherrypick.core` namespace package importable from the repo root without an install.
 _ROOT = Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))

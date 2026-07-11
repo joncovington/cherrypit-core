@@ -1,4 +1,4 @@
-"""cherrypit.dxfeed — shared on-demand DXLink event collectors.
+"""cherrypick.core.dxfeed — shared on-demand DXLink event collectors.
 
 Unifies MEICAgent's and EarningsAgent's near-identical `_collect_events` + per-event wrappers (Quote,
 Greeks, Trade, Summary). One deliberate design fix over MEIC's version: the broker **session is

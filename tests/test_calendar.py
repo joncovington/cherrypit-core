@@ -1,4 +1,4 @@
-"""Tests for cherrypit.calendar.
+"""Tests for cherrypick.core.calendar.
 
 The 2026 cases are golden-master checks against MEICAgent's current hardcoded config lists — the
 computed calendar must reproduce them exactly *where the config is correct*. The one deliberate
@@ -10,7 +10,7 @@ from datetime import date
 
 import pytest
 
-from cherrypit import calendar as cal
+from cherrypick.core import calendar as cal
 
 # --- MEICAgent config lists, 2026 (the golden master) -------------------------------------------
 CFG_HOLIDAYS_2026 = {

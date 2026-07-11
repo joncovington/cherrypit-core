@@ -1,4 +1,4 @@
-"""Tests for cherrypit.fees.
+"""Tests for cherrypick.core.fees.
 
 Part 1 pins the cost-model outputs (extracted verbatim from EarningsAgent's costs.py). Part 2 asserts
 the IC open-fee schedule reproduces MEICAgent's hardcoded fee_estimate_fallback_per_contract constants.
@@ -6,7 +6,7 @@ the IC open-fee schedule reproduces MEICAgent's hardcoded fee_estimate_fallback_
 
 import pytest
 
-from cherrypit import fees
+from cherrypick.core import fees
 
 # A 2-leg spread, 3 contracts; leg spreads 0.10 and 0.06.
 ORDER_2LEG = {"order": {"legs": [{}, {}]}}

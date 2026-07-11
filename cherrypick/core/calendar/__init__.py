@@ -1,4 +1,4 @@
-"""cherrypit.calendar — one shared market calendar for the whole suite.
+"""cherrypick.core.calendar — one shared market calendar for the whole suite.
 
 Replaces MEICAgent's hand-maintained ``*_2026`` config lists (which drift and can be wrong — the
 2026 triple-witching list had 2026-06-18, a *Thursday*, instead of the real 3rd Friday 2026-06-19)

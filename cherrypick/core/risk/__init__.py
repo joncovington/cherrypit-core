@@ -1,4 +1,4 @@
-"""cherrypit.risk — account-level risk primitives (fail-closed, opt-in).
+"""cherrypick.core.risk — account-level risk primitives (fail-closed, opt-in).
 
 Seeded from tastytrade-mcp's `risk.py`. These are pure functions over *live account state* that a
 consumer can consult before placing an order; the core never calls the broker itself — the caller

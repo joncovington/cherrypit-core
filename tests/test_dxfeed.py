@@ -1,4 +1,4 @@
-"""Tests for cherrypit.dxfeed.collect_events using a fake session + fake DXLink streamer.
+"""Tests for cherrypick.core.dxfeed.collect_events using a fake session + fake DXLink streamer.
 
 No tastytrade, no network: the streamer is factory-injected and events are hand-built. Async is driven
 via asyncio.run() so no pytest-asyncio plugin is required.
@@ -8,7 +8,7 @@ import asyncio
 
 import pytest
 
-from cherrypit import dxfeed
+from cherrypick.core import dxfeed
 
 
 class FakeEvent:

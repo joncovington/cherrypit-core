@@ -1,8 +1,8 @@
-"""Tests for cherrypit.risk.evaluate_deploy_limit — pure account-buying-power cap math, no broker."""
+"""Tests for cherrypick.core.risk.evaluate_deploy_limit — pure account-buying-power cap math, no broker."""
 
 from decimal import Decimal
 
-from cherrypit import risk
+from cherrypick.core import risk
 
 
 def _eval(used, available, consume, pct):

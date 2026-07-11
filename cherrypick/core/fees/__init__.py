@@ -1,4 +1,4 @@
-"""cherrypit.fees — tastytrade cost model (one home for the fee schedule).
+"""cherrypick.core.fees — tastytrade cost model (one home for the fee schedule).
 
 Two related pieces the suite previously kept in two places:
 

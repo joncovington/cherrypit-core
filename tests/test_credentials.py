@@ -1,10 +1,10 @@
-"""Tests for cherrypit.auth.credentials.CredentialStore."""
+"""Tests for cherrypick.core.auth.credentials.CredentialStore."""
 
 import keyring
 import keyring.errors
 import pytest
 
-from cherrypit.auth import (
+from cherrypick.core.auth import (
     ALL_SECRETS,
     CLIENT_SECRET,
     REFRESH_TOKEN,

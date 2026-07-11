@@ -1,10 +1,10 @@
-"""Tests for cherrypit.auth.session.SessionManager (injected factory, no broker/network)."""
+"""Tests for cherrypick.core.auth.session.SessionManager (injected factory, no broker/network)."""
 
 import threading
 
 import pytest
 
-from cherrypit.auth import (
+from cherrypick.core.auth import (
     CLIENT_SECRET,
     REFRESH_TOKEN,
     CredentialError,

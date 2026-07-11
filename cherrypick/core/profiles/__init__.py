@@ -1,4 +1,4 @@
-"""cherrypit.profiles — named risk-profile registry + merge engine (Phase A).
+"""cherrypick.core.profiles — named risk-profile registry + merge engine (Phase A).
 
 Consolidates the profiling *mechanism* both suite modules share; profile *definitions* stay
 per-module. The two override models unify here because EarningsAgent's merge is a strict superset of

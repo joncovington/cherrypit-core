@@ -1,4 +1,4 @@
-"""cherrypit.db — shared SQLite engine mechanics (connection + additive migrations).
+"""cherrypick.core.db — shared SQLite engine mechanics (connection + additive migrations).
 
 Unifies the near-identical connection setup and the byte-identical additive-migration runner that
 MEICAgent's and EarningsAgent's db modules duplicate (`db.py`, `db_paper.py`). This is engine

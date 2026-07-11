@@ -1,4 +1,4 @@
-"""cherrypit.auth — keyring credentials + lazy OAuth session (parameterized for each consumer)."""
+"""cherrypick.core.auth — keyring credentials + lazy OAuth session (parameterized for each consumer)."""
 
 from .credentials import (
     ACCOUNT_NUMBER,

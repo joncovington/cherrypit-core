@@ -8,7 +8,10 @@ external profiles file.
 
 Phase B adds the *attribution contract* (`attribution_tag`): every trade row carries a tag naming the
 named risk profile (or parallel-shadow paper book) that opened it, and reporting groups P&L by that
-tag. The calibration harness and promotion advisor are later phases.
+tag. Phase C adds the calibration harness's *comparison engine* (`compare_profiles`): group tagged
+trade rows by their attribution tag and apply a module-injected summary per group — the metric math
+stays per-module (it is domain-divergent) while the grouping orchestration is shared. The promotion
+advisor is a later phase.
 """
 
 from __future__ import annotations
@@ -61,6 +64,34 @@ def attribution_tag(value: Any, *, untagged: str = UNTAGGED) -> str:
         return untagged
     text = str(value).strip()
     return text or untagged
+
+
+def compare_profiles(rows, *, tag_key: str, summarize, untagged: str = UNTAGGED) -> dict:
+    """Group profile-tagged trade rows by their attribution tag and summarize each group.
+
+    The calibration harness's comparison engine (plan Part 10 Phase C). It consolidates the
+    *orchestration* both modules hand-roll — MEICAgent's `cmd_get_range_summary` groups
+    `ic_trades` by `risk_profile` then calls `_range_stats_for_rows` per group; EarningsAgent's
+    `cmd_get_pnl_summary` groups `trades` by `profile` then aggregates per group — while leaving
+    the metric math injected via `summarize`, because it is deliberately domain-divergent (MEIC
+    annualizes Sharpe on a daily return series; Earnings does not, on discrete event trades).
+
+    - `rows`: iterable of mappings (a module's trade rows; sqlite3.Row or dict). Each must carry
+      `tag_key`. The caller filters (e.g. to closed trades) before passing them in.
+    - `tag_key`: column naming the profile tag — `"risk_profile"` (MEIC) or `"profile"` (Earnings).
+    - `summarize`: `callable(list_of_rows_for_one_profile) -> value` (any JSON-able summary); the
+      module's own metric bundle. Called once per profile group, never on the whole set.
+    - `untagged`: sentinel for rows with no profile tag, applied via `attribution_tag` (MEIC uses
+      the `"unassigned"` default; Earnings passes `"default"` to match its non-null column).
+
+    Returns `{profile_tag: summarize(group)}`, groups in first-seen row order (deterministic and
+    behaviour-preserving for the callers being consolidated). Empty `rows` -> `{}`.
+    """
+    groups: dict[str, list] = {}
+    for r in rows:
+        tag = attribution_tag(r[tag_key], untagged=untagged)
+        groups.setdefault(tag, []).append(r)
+    return {tag: summarize(group) for tag, group in groups.items()}
 
 
 def merge_profile(base: Mapping, profile_def: Mapping, *, reserved_keys: tuple = (),

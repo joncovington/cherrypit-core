@@ -63,6 +63,57 @@ def test_attribution_tag_custom_untagged_sentinel():
     assert profiles.attribution_tag("balanced", untagged="default") == "balanced"
 
 
+# --------------------------------------------------------------------------- compare_profiles
+def _count(group):
+    return {"n": len(group), "pnl": sum(r["pnl"] for r in group)}
+
+
+def test_compare_profiles_groups_by_tag_and_summarizes():
+    rows = [
+        {"risk_profile": "aggressive", "pnl": 10},
+        {"risk_profile": "conservative", "pnl": -5},
+        {"risk_profile": "aggressive", "pnl": 3},
+    ]
+    table = profiles.compare_profiles(rows, tag_key="risk_profile", summarize=_count)
+    assert table == {
+        "aggressive": {"n": 2, "pnl": 13},
+        "conservative": {"n": 1, "pnl": -5},
+    }
+
+
+def test_compare_profiles_summarize_called_once_per_group():
+    calls = []
+    def summarize(group):
+        calls.append(len(group))
+        return len(group)
+    rows = [{"p": "a"}, {"p": "a"}, {"p": "b"}]
+    profiles.compare_profiles(rows, tag_key="p", summarize=summarize)
+    assert sorted(calls) == [1, 2]      # one call per group, never on the whole set
+
+
+def test_compare_profiles_untagged_rows_group_under_sentinel():
+    rows = [{"risk_profile": None, "pnl": 1}, {"risk_profile": "aggressive", "pnl": 2}]
+    table = profiles.compare_profiles(rows, tag_key="risk_profile", summarize=_count)
+    assert table["unassigned"] == {"n": 1, "pnl": 1}
+    assert table["aggressive"] == {"n": 1, "pnl": 2}
+
+
+def test_compare_profiles_custom_untagged_sentinel():
+    rows = [{"profile": None, "pnl": 1}]
+    table = profiles.compare_profiles(rows, tag_key="profile", summarize=_count, untagged="default")
+    assert set(table) == {"default"}
+
+
+def test_compare_profiles_preserves_first_seen_order():
+    rows = [{"p": "z"}, {"p": "a"}, {"p": "z"}]
+    table = profiles.compare_profiles(rows, tag_key="p", summarize=len)
+    assert list(table) == ["z", "a"]    # first-seen order, not sorted
+
+
+def test_compare_profiles_empty_rows():
+    assert profiles.compare_profiles([], tag_key="risk_profile", summarize=_count) == {}
+
+
 # --------------------------------------------------------------------------- merge_profile (flat / MEIC)
 def test_merge_profile_flat_override_skips_underscore_and_leaves_base():
     base = {"min_iv_rank": 0.3, "max_ics": 4, "force_close_time": "15:45"}

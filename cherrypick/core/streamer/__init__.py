@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import signal
 import time
 import traceback
@@ -119,7 +120,7 @@ class ChainStreamer:
         self.log.info("Connecting DXLinkStreamer…")
         async with DXLinkStreamer(session) as streamer:
             streamcache.upsert_status(
-                state.conn, pid=None, connected_since=datetime.now(UTC).isoformat(),
+                state.conn, pid=os.getpid(), connected_since=datetime.now(UTC).isoformat(),
                 reconnect_count=state.reconnect_count,
             )
             self.log.info("DXLinkStreamer connected (reconnects: %d)", state.reconnect_count)

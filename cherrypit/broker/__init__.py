@@ -13,15 +13,21 @@ the broker SDK or a network.
 The stored account-number lookup is *not* done here — the consumer passes it as `default_number`,
 so the core stays decoupled from any module's `credentials` shim.
 
-Deliberately out of scope (module-local for now; a later, supervised per-module cutover — see
-CUTOVER.md — moves them): the live order-construction/execution write path (`execute_trade` /
-`_build_order`) and MEIC's stream-cache-aware / futures chain fetch.
+Order **construction** (`build_order`) is included — it's pure (a dict spec -> a NewOrder object,
+no network) and unifies both repos' `_build_order`. The tastytrade order classes are imported lazily
+(or injected as `order_ns`), so it too unit-tests without the broker SDK.
+
+Deliberately out of scope (module-local; a later, supervised cutover moves them): the order
+**submission** path (`execute_trade` — `account.place_order` dry-run/live) and MEIC's
+stream-cache-aware / futures chain fetch.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import date
+from decimal import Decimal
+from types import SimpleNamespace
 from typing import Any
 
 # An account class exposes an async classmethod `get(session)` -> list[Account] and
@@ -101,3 +107,59 @@ def atm_window(options: list, strike_count: int, around_price: float | None = No
     hi = min(len(strikes), nearest + strike_count + 1)
     keep = set(strikes[lo:hi])
     return [o for o in options if strike_of(o) in keep]
+
+
+# --------------------------------------------------------------------------- order construction
+# Order-action spec string -> tastytrade OrderAction enum name. Byte-for-byte identical in both repos.
+ACTION_MAP = {
+    "buy to open": "BUY_TO_OPEN",
+    "sell to open": "SELL_TO_OPEN",
+    "buy to close": "BUY_TO_CLOSE",
+    "sell to close": "SELL_TO_CLOSE",
+}
+
+
+def _default_order_ns() -> Any:
+    # Imported lazily so the module imports without the broker SDK.
+    from tastytrade.order import Leg, NewOrder, OrderAction, OrderTimeInForce, OrderType
+    return SimpleNamespace(Leg=Leg, NewOrder=NewOrder, OrderAction=OrderAction,
+                           OrderTimeInForce=OrderTimeInForce, OrderType=OrderType)
+
+
+def build_order(spec: dict, *, order_ns: Any = None) -> Any:
+    """Construct a tastytrade NewOrder from a plain dict `spec` — pure construction, no submission.
+
+    Unifies both repos' `_build_order` (MEIC's is the superset — the extra `stop_trigger` is simply
+    omitted when absent, so it also serves EarningsAgent). `spec` keys:
+      - time_in_force (default "Day"), order_type (default "Limit")
+      - legs: [{instrument_type, symbol, action, quantity}] — `action` is a human string
+        ("buy to open", ...) mapped through ACTION_MAP to the OrderAction enum
+      - price (optional) with price_effect "credit"/"debit" to sign it (credit -> negative)
+      - stop_trigger (optional)
+
+    The tastytrade order classes are imported lazily, or injected via `order_ns` (an object exposing
+    Leg / NewOrder / OrderAction / OrderTimeInForce / OrderType) for offline tests.
+    """
+    ns = order_ns or _default_order_ns()
+    tif = ns.OrderTimeInForce(str(spec.get("time_in_force", "Day")))
+    otype = ns.OrderType(str(spec.get("order_type", "Limit")))
+    legs = []
+    for leg in spec.get("legs", []):
+        action = ns.OrderAction[ACTION_MAP[str(leg["action"]).strip().lower()]]
+        legs.append(ns.Leg(
+            instrument_type=leg["instrument_type"],
+            symbol=leg["symbol"],
+            action=action,
+            quantity=Decimal(str(leg["quantity"])),
+        ))
+    kwargs: dict = {"time_in_force": tif, "order_type": otype, "legs": legs}
+    if spec.get("price") is not None:
+        price = Decimal(str(spec["price"]))
+        effect = spec.get("price_effect")
+        if effect is not None:
+            magnitude = abs(price)
+            price = -magnitude if str(effect).strip().lower() == "credit" else magnitude
+        kwargs["price"] = price
+    if spec.get("stop_trigger") is not None:
+        kwargs["stop_trigger"] = Decimal(str(spec["stop_trigger"]))
+    return ns.NewOrder(**kwargs)

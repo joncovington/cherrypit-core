@@ -8,7 +8,22 @@ version = "0.1.0"
 description = "Shared core library for the Cherrypick trading suite (auth, dxfeed, fees, risk, calendar, paper, gex, ...). Imports as the cherrypick.core namespace package."
 readme = "README.md"
 requires-python = ">=3.10"
+authors = [{ name = "Jon Covington", email = "jon.covington@gmail.com" }]
+keywords = ["trading", "options", "tastytrade", "iron-condor", "cherrypick"]
+# License intentionally unset until the suite's licensing is decided (all rights reserved by default).
+classifiers = [
+    "Private :: Do Not Upload",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.13",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Topic :: Office/Business :: Financial :: Investment",
+]
 dependencies = ["keyring>=24"]
+
+[project.urls]
+Repository = "https://github.com/joncovington/cherrypick-core"
+Suite = "https://github.com/joncovington/cherrypick"
 
 # tastytrade is a runtime dependency of consumers, not of importing the library: auth.session
 # imports it lazily (only when building a real session), so cherrypick-core imports and unit-tests

@@ -4,8 +4,11 @@ Consolidates the profiling *mechanism* both suite modules share; profile *defini
 per-module. The two override models unify here because EarningsAgent's merge is a strict superset of
 MEICAgent's flat overlay (see plan Part 10): a top-level partial override, plus optional per-namespace
 deep-merges (Earnings' `strategy_overrides`). Pure dict/JSON operations, no I/O beyond an optional
-external profiles file. The attribution contract, calibration harness, and promotion advisor are later
-phases.
+external profiles file.
+
+Phase B adds the *attribution contract* (`attribution_tag`): every trade row carries a tag naming the
+named risk profile (or parallel-shadow paper book) that opened it, and reporting groups P&L by that
+tag. The calibration harness and promotion advisor are later phases.
 """
 
 from __future__ import annotations
@@ -13,6 +16,10 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from typing import Any
+
+# Canonical sentinel for a trade row that carries no named profile (a live trade, or a
+# pre-attribution row) when it surfaces in a profile-grouped rollup. See `attribution_tag`.
+UNTAGGED = "unassigned"
 
 
 def load_profiles(config: Mapping | None = None, *, external_path: Any = None) -> dict:
@@ -34,6 +41,26 @@ def select_profile(profiles: Mapping, name: str) -> dict:
     if name not in profiles:
         raise ValueError(f"unknown profile '{name}' -- known profiles: {sorted(profiles)}")
     return dict(profiles[name])
+
+
+def attribution_tag(value: Any, *, untagged: str = UNTAGGED) -> str:
+    """Normalize a stored profile tag into a stable attribution group key.
+
+    The attribution contract: every trade row carries a profile tag naming which named risk
+    profile (or parallel-shadow paper book) opened it, and reporting groups P&L by that tag.
+    This normalizes a *read* value to a group key — the profile name if one was set, else
+    `untagged` for rows with no named profile. `None`, empty, and whitespace-only values are
+    all treated as untagged.
+
+    Column name and the untagged sentinel stay per module (both are baked into committed
+    schemas, so this is a value convention, not a column rename): MEICAgent's
+    `ic_trades.risk_profile` is nullable and uses the default `"unassigned"`; EarningsAgent's
+    `trades.profile` is `NOT NULL DEFAULT 'default'`, so it passes `untagged="default"`.
+    """
+    if value is None:
+        return untagged
+    text = str(value).strip()
+    return text or untagged
 
 
 def merge_profile(base: Mapping, profile_def: Mapping, *, reserved_keys: tuple = (),

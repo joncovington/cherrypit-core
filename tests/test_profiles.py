@@ -38,6 +38,31 @@ def test_select_profile_unknown_raises():
         profiles.select_profile({"a": {}}, "z")
 
 
+# --------------------------------------------------------------------------- attribution_tag
+def test_attribution_tag_returns_name_when_set():
+    assert profiles.attribution_tag("aggressive") == "aggressive"
+
+
+def test_attribution_tag_none_uses_default_sentinel():
+    assert profiles.attribution_tag(None) == "unassigned"
+    assert profiles.attribution_tag(None) == profiles.UNTAGGED
+
+
+def test_attribution_tag_empty_and_whitespace_treated_as_untagged():
+    assert profiles.attribution_tag("") == "unassigned"
+    assert profiles.attribution_tag("   ") == "unassigned"
+
+
+def test_attribution_tag_strips_surrounding_whitespace():
+    assert profiles.attribution_tag("  balanced ") == "balanced"
+
+
+def test_attribution_tag_custom_untagged_sentinel():
+    # EarningsAgent's schema stores a non-null "default" sentinel, not NULL.
+    assert profiles.attribution_tag(None, untagged="default") == "default"
+    assert profiles.attribution_tag("balanced", untagged="default") == "balanced"
+
+
 # --------------------------------------------------------------------------- merge_profile (flat / MEIC)
 def test_merge_profile_flat_override_skips_underscore_and_leaves_base():
     base = {"min_iv_rank": 0.3, "max_ics": 4, "force_close_time": "15:45"}

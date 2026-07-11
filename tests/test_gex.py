@@ -83,3 +83,55 @@ def test_compute_gex_skips_zero_oi_and_missing_greeks():
 
 def test_compute_gex_empty_returns_not_ok():
     assert gex.compute_gex([], {}, {}, spot=600.0)["ok"] is False
+
+
+# --- compute_gex_profile (rich OI + volume aggregation) -----------------------------------------
+P_CHAIN = [
+    {"strike_price": 600, "streamer_symbol": "C600", "option_type": "C", "shares_per_contract": 100},
+    {"strike_price": 600, "streamer_symbol": "P600", "option_type": "P", "shares_per_contract": 100},
+    {"strike_price": 610, "streamer_symbol": "C610", "option_type": "C", "shares_per_contract": 100},
+]
+P_GREEKS = {"C600": {"gamma": 0.01, "iv": 20.0}, "P600": {"gamma": 0.01, "iv": 22.0},
+            "C610": {"gamma": 0.05, "iv": 18.0}}
+P_OI = {"C600": 100, "P600": 300, "C610": 50}
+P_VOL = {"C600": 10, "P600": 20, "C610": 5}
+# dollar_gamma(g, q, 100, 600) = g*q*360000
+
+
+def test_compute_gex_profile_oi_and_volume_series():
+    out = gex.compute_gex_profile(P_CHAIN, P_GREEKS, P_OI, P_VOL, spot=600.0)
+    assert out["ok"] is True
+    s600, s610 = out["series"]
+    # OI ("positioning") series — puts negated
+    assert s600["call_gex"] == 360000 and s600["put_gex"] == -1080000 and s600["net_gex"] == -720000
+    assert s610["call_gex"] == 900000 and s610["put_gex"] == 0 and s610["net_gex"] == 900000
+    # Volume ("flow") series is independent of OI and diverges from it
+    assert s600["net_gex_vol"] == -36000 and s610["net_gex_vol"] == 90000
+    assert (s600["net_gex"], s600["net_gex_vol"]) != (s600["net_gex_vol"], s600["net_gex"])
+    # per-strike detail carried through
+    assert s600["call_oi"] == 100 and s600["put_oi"] == 300 and s600["total_vol"] == 30
+    assert s600["call_iv"] == 20.0 and s600["put_iv"] == 22.0
+
+
+def test_compute_gex_profile_totals_walls_and_flip():
+    t = gex.compute_gex_profile(P_CHAIN, P_GREEKS, P_OI, P_VOL, spot=600.0)["totals"]
+    assert t["total_call_gex"] == 1260000
+    assert t["total_put_gex"] == 1080000
+    assert t["net_gex"] == 180000 and t["gex_positive"] is True
+    assert t["max_gex_strike"] == 610          # larger |net_gex|
+    assert t["call_wall"] == 610               # max call_gex
+    assert t["put_wall"] == 600                # min (most negative) put_gex
+    assert t["zero_gamma"] == 608.0            # cumulative -720000 -> +180000 crosses at 600 + 0.8*10
+
+
+def test_compute_gex_profile_strike_scale_scales_display_only():
+    # XSP-style: chain priced at 60, scaled ×10 into the SPX domain; math uses the unscaled spot.
+    chain = [{"strike_price": 60, "streamer_symbol": "C60", "option_type": "c", "shares_per_contract": 100}]
+    out = gex.compute_gex_profile(chain, {"C60": {"gamma": 0.01}}, {"C60": 100}, {"C60": 0},
+                                  spot=60.0, strike_scale=10.0)
+    assert out["series"][0]["strike"] == 600.0          # displayed strike scaled
+    assert out["series"][0]["call_gex"] == round(0.01 * 100 * 100 * 60 * 60 * 0.01)  # math uses spot=60
+
+
+def test_compute_gex_profile_empty_returns_not_ok():
+    assert gex.compute_gex_profile([], {}, {}, {}, spot=600.0)["ok"] is False

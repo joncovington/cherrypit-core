@@ -92,9 +92,17 @@ def modules_dir(*, env: str | None = "CHERRYPICK_MODULES_HOME") -> Path:
     return override if override else home() / "modules"
 
 
-def config_path() -> Path:
-    """The orchestrator suite config (``home()/config.json``)."""
-    return home() / "config.json"
+def config_dir() -> Path:
+    """Directory holding the per-module configs (``home()/config``)."""
+    return home() / "config"
+
+
+def config_path(package: str | None = None) -> Path:
+    """The orchestrator suite config (``home()/config.json``) when *package* is ``None``; otherwise a
+    module's config at ``home()/config/<package>.json`` (e.g. ``config/meic.json``)."""
+    if package is None:
+        return home() / "config.json"
+    return config_dir() / f"{package}.json"
 
 
 def dashboard_path() -> Path:

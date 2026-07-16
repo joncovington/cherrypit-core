@@ -83,6 +83,14 @@ def test_config_and_dashboard_paths(_clean_env):
     assert home.dashboard_path() == base / "dashboard.html"
 
 
+def test_module_config_paths(_clean_env):
+    base = _clean_env / ".cherrypick"
+    assert home.config_dir() == base / "config"
+    assert home.config_path("meic") == base / "config" / "meic.json"
+    assert home.config_path("earnings") == base / "config" / "earnings.json"
+    assert home.config_path("gex") == base / "config" / "gex.json"
+
+
 def test_resolvers_are_pure_no_dirs_created(tmp_path, monkeypatch):
     monkeypatch.setenv("CHERRYPICK_HOME", str(tmp_path / "cp"))
     _ = (home.home(), home.data_dir("meic"), home.logs_dir("meic"), home.state_dir())

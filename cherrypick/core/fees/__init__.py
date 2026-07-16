@@ -2,9 +2,10 @@
 
 Two related pieces the suite previously kept in two places:
 
-1. **Cost-adjusted paper fills** (from EarningsAgent's `costs.py`, extracted verbatim): tastytrade's
-   open-only commission ($1/contract open, $0 close, $10/leg cap) + clearing/regulatory pass-throughs +
-   a slippage haircut off each leg's bid-ask width. Used to keep paper P&L honest.
+1. **Cost-adjusted paper fills** (originally from EarningsAgent's `costs.py`): tastytrade's open-only
+   commission ($1/contract open, $0 close, $10/leg cap) + clearing/regulatory pass-throughs + a slippage
+   haircut off each leg's bid-ask width (recalibrated 2026-07-16 to 12.5% of spread, capped at 15% of
+   leg mid so deep-OTM "junk" wings don't dominate -- see `_slippage`). Used to keep paper P&L honest.
 
 2. **The IC open-fee schedule** (behind MEICAgent's hardcoded `fee_estimate_fallback_per_contract`
    constants): the same tastytrade schedule plus the per-symbol *broad-based index exchange fee* that
@@ -24,7 +25,14 @@ DEFAULT_COSTS = {
     "commission_cap_per_leg": 10.00,
     "clearing_fee_per_contract": 0.10,
     "regulatory_fee_per_contract": 0.04,
-    "slippage_frac_of_spread": 0.25,
+    # Slippage: concede this fraction of each leg's bid-ask from mid, per fill. 0.125 = a quarter of
+    # the way from mid to the far touch, a realistic worked-combo-limit fill (recalibrated 2026-07-16
+    # from 0.25, a market-order assumption that made slippage ~98% of earnings paper cost).
+    "slippage_frac_of_spread": 0.125,
+    # Guardrail: never charge a leg more slippage than this fraction of its mid. A bid>=0 quote always
+    # has spread <= 2*mid, so at frac 0.125 this binds only when spread > 1.2*mid -- i.e. deep-OTM wings
+    # quoted wide relative to their value, which would otherwise contribute outsized slippage.
+    "slippage_cap_frac_of_mid": 0.15,
 }
 
 
@@ -47,9 +55,24 @@ def _pass_through(num_legs: int, quantity: int, clearing: float, regulatory: flo
     return num_legs * quantity * (clearing + regulatory)
 
 
-def _slippage(leg_quotes: list[dict], quantity: int, frac_of_spread: float) -> float:
-    total_spread = sum(max(q.get("ask", 0.0) - q.get("bid", 0.0), 0.0) for q in leg_quotes)
-    return total_spread * frac_of_spread * 100 * quantity
+def _slippage(leg_quotes: list[dict], quantity: int, frac_of_spread: float,
+              cap_frac_of_mid: float | None = None) -> float:
+    """Per-leg slippage = frac_of_spread of that leg's bid-ask width, optionally capped at
+    cap_frac_of_mid of the leg's mid; summed across legs, x100 x quantity.
+
+    Summing per-leg spreads is deliberate and correct: a multi-leg combo's net bid-ask exactly equals
+    the sum of its legs' spreads (the mids net out, the spreads add), so this is identical to
+    fractioning the net combo spread -- there is nothing to de-duplicate. The cap is a realism
+    guardrail for deep-OTM wings whose spread is large relative to their value."""
+    total = 0.0
+    for q in leg_quotes:
+        bid = q.get("bid", 0.0)
+        ask = q.get("ask", 0.0)
+        slip = max(ask - bid, 0.0) * frac_of_spread
+        if cap_frac_of_mid is not None:
+            slip = min(slip, cap_frac_of_mid * max((bid + ask) / 2.0, 0.0))
+        total += slip
+    return total * 100 * quantity
 
 
 def _apply_costs(order: dict, leg_quotes: list[dict], quantity: int, config: dict,
@@ -60,7 +83,8 @@ def _apply_costs(order: dict, leg_quotes: list[dict], quantity: int, config: dic
                              costs_cfg["commission_cap_per_leg"])
     pass_through = _pass_through(num_legs, quantity, costs_cfg["clearing_fee_per_contract"],
                                  costs_cfg["regulatory_fee_per_contract"])
-    slippage = _slippage(leg_quotes, quantity, costs_cfg["slippage_frac_of_spread"])
+    slippage = _slippage(leg_quotes, quantity, costs_cfg["slippage_frac_of_spread"],
+                         costs_cfg.get("slippage_cap_frac_of_mid"))
     total = commission + pass_through + slippage
     return {
         "commission": round(commission, 2),

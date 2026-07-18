@@ -25,13 +25,21 @@ DEFAULT_COSTS = {
     "commission_cap_per_leg": 10.00,
     "clearing_fee_per_contract": 0.10,
     "regulatory_fee_per_contract": 0.04,
-    # Slippage: concede this fraction of each leg's bid-ask from mid, per fill. 0.125 = a quarter of
-    # the way from mid to the far touch, a realistic worked-combo-limit fill (recalibrated 2026-07-16
-    # from 0.25, a market-order assumption that made slippage ~98% of earnings paper cost).
+    # Slippage: concede this fraction of each leg's bid-ask from mid, per fill. 0.125 of the full spread
+    # = a quarter of the way from mid to the far touch, a realistic worked-combo-limit fill (recalibrated
+    # 2026-07-16 from 0.25, a market-order assumption that made slippage ~98% of earnings paper cost).
+    # Slippage-literature check 2026-07-17: this sits at the OPTIMISTIC edge of the practitioner
+    # backtest band (25-50% of the way to the touch, i.e. frac 0.125-0.25) and below the ~half-of-posted
+    # effective spread empirically measured on price-improved equity marketable orders -- defensible for
+    # liquid names worked as combo limits (what the scanner's liquidity gates screen toward), optimistic
+    # for the illiquid tail. Left at 0.125 deliberately; raise toward 0.15-0.1875 to be more conservative.
     "slippage_frac_of_spread": 0.125,
     # Guardrail: never charge a leg more slippage than this fraction of its mid. A bid>=0 quote always
     # has spread <= 2*mid, so at frac 0.125 this binds only when spread > 1.2*mid -- i.e. deep-OTM wings
-    # quoted wide relative to their value, which would otherwise contribute outsized slippage.
+    # quoted wide relative to their value, which would otherwise contribute outsized slippage. This cap
+    # has empirical grounding: effective-spread studies find realized cost is CONCAVE in quoted width --
+    # only ~10-22% of a spread *widening* passes through to the effective spread -- so a flat fraction of
+    # a wide junk-wing spread would overstate the fill cost, which is exactly what the cap prevents.
     "slippage_cap_frac_of_mid": 0.15,
 }
 

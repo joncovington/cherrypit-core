@@ -54,6 +54,29 @@ def interpolate_zero_gamma(strikes: list[dict]) -> float | None:
     return None
 
 
+def nearest_zero_gamma(strikes: list[dict], spot: float, key: str = "net_gex") -> float | None:
+    """Interpolated strike where per-strike `key` changes sign, **nearest to `spot`**.
+
+    This is gexbot's zero-gamma definition (confirmed empirically): the LOCAL per-strike sign
+    change closest to price. It is deliberately distinct from `interpolate_zero_gamma`, which
+    returns the single strike where the CUMULATIVE running sum crosses zero (where aggregate
+    dealer exposure flips). Use the cumulative form for a whole-book regime read; use this for
+    "how far is spot from the flip that governs price *here*". Because it reads individual
+    strikes it is the noisier of the two — a thin strike near spot can create a local crossing.
+
+    `strikes` must be sorted ascending by "strike", each carrying `key` (e.g. "net_gex").
+    Returns None when there is no sign change.
+    """
+    crossings = []
+    for a, b in zip(strikes, strikes[1:], strict=False):
+        va, vb = a[key], b[key]
+        if (va < 0 <= vb) or (va >= 0 > vb):
+            den = vb - va
+            t = (-va / den) if den else 0.5
+            crossings.append(round(a["strike"] + t * (b["strike"] - a["strike"]), 2))
+    return min(crossings, key=lambda z: abs(z - spot)) if crossings else None
+
+
 def compute_gex(chain_entries: list[dict], greeks: dict, oi: dict, spot: float,
                 multiplier: int = DEFAULT_MULTIPLIER) -> dict:
     """Compute a GEX profile from an option-chain snapshot.
@@ -229,4 +252,36 @@ def compute_gex_profile(chain_entries: list[dict], greeks: dict, oi: dict, volum
             "call_wall": call_wall_s["strike"] if call_wall_s else None,
             "put_wall": put_wall_s["strike"] if put_wall_s else None,
         },
+    }
+
+
+def net_walls(strikes: list[dict], key: str = "net_gex") -> tuple[float | None, float | None]:
+    """(call_wall, put_wall) = strikes of **max / min** `key` — gexbot's "major positive /
+    major negative" net-GEX walls.
+
+    Distinct from the raw call/put gamma-peak walls in `compute_gex` / `compute_gex_profile`
+    (max call_gex / min put_gex): those find the biggest single-side gamma pile, whereas this
+    finds where NET dealer gamma is most positive / most negative. `strikes` carries `key`
+    (e.g. "net_gex"). Empty input yields (None, None).
+    """
+    call = max(strikes, key=lambda s: s[key], default=None)
+    put = min(strikes, key=lambda s: s[key], default=None)
+    return (call["strike"] if call else None, put["strike"] if put else None)
+
+
+def volume_totals(series: list[dict]) -> dict:
+    """Volume-basis roll-ups (total call/put GEX, net) over the per-strike `*_vol` fields,
+    mirroring `compute_gex_profile`'s OI `totals`.
+
+    Kept separate from `compute_gex_profile` so a caller can attach a volume ("flow") reading
+    alongside the OI ("positioning") totals it already returns. `series` entries carry
+    `call_gex_vol` / `put_gex_vol` (puts stored negative) / `net_gex_vol`.
+    """
+    total_call = sum(s["call_gex_vol"] for s in series if s["call_gex_vol"] > 0)
+    total_put = abs(sum(s["put_gex_vol"] for s in series if s["put_gex_vol"] < 0))
+    net = sum(s["net_gex_vol"] for s in series)
+    return {
+        "total_call_gex_vol": round(total_call),
+        "total_put_gex_vol": round(total_put),
+        "net_gex_vol": round(net),
     }

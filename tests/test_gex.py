@@ -135,3 +135,52 @@ def test_compute_gex_profile_strike_scale_scales_display_only():
 
 def test_compute_gex_profile_empty_returns_not_ok():
     assert gex.compute_gex_profile([], {}, {}, {}, spot=600.0)["ok"] is False
+
+
+# --- nearest_zero_gamma (gexbot's local, nearest-spot flip) --------------------------------------
+def test_nearest_zero_gamma_interpolates_single_crossing():
+    strikes = [{"strike": 590, "net_gex": -100}, {"strike": 600, "net_gex": 300}]
+    assert gex.nearest_zero_gamma(strikes, spot=1000.0) == 592.5   # 590 + (100/400)*10
+
+
+def test_nearest_zero_gamma_none_when_no_crossing():
+    assert gex.nearest_zero_gamma(
+        [{"strike": 595, "net_gex": 100}, {"strike": 600, "net_gex": 50}], spot=600.0) is None
+
+
+def test_nearest_zero_gamma_picks_crossing_closest_to_spot_and_differs_from_cumulative():
+    # Three local sign changes at 595, 605, 615; the cumulative crossing is elsewhere (600).
+    strikes = [{"strike": 590, "net_gex": -100}, {"strike": 600, "net_gex": 100},
+               {"strike": 610, "net_gex": -100}, {"strike": 620, "net_gex": 100}]
+    assert gex.nearest_zero_gamma(strikes, spot=612.0) == 615.0    # nearest local flip to 612
+    assert gex.interpolate_zero_gamma(strikes) == 600.0           # cumulative flip — different level
+
+
+def test_nearest_zero_gamma_honors_key():
+    series = gex.compute_gex_profile(P_CHAIN, P_GREEKS, P_OI, P_VOL, spot=600.0)["series"]
+    # net_gex_vol crosses -36000 -> 90000 between 600 and 610: 600 + (36000/126000)*10
+    assert gex.nearest_zero_gamma(series, spot=600.0, key="net_gex_vol") == 602.86
+
+
+# --- net_walls (gexbot's net-GEX major-positive / major-negative walls) --------------------------
+def test_net_walls_returns_net_extreme_strikes():
+    series = [{"strike": 600, "net_gex": 50}, {"strike": 610, "net_gex": -80},
+              {"strike": 620, "net_gex": 30}]
+    assert gex.net_walls(series) == (600, 610)      # max net at 600, min net at 610
+
+
+def test_net_walls_honors_key_and_handles_empty():
+    series = [{"strike": 600, "net_gex_vol": -5}, {"strike": 610, "net_gex_vol": 9}]
+    assert gex.net_walls(series, key="net_gex_vol") == (610, 600)
+    assert gex.net_walls([]) == (None, None)
+
+
+# --- volume_totals (flow roll-ups mirroring compute_gex_profile's OI totals) ---------------------
+def test_volume_totals_over_profile_series():
+    series = gex.compute_gex_profile(P_CHAIN, P_GREEKS, P_OI, P_VOL, spot=600.0)["series"]
+    # call vol GEX: 36000 (C600) + 90000 (C610); put vol GEX: -72000 (P600, stored negative)
+    assert gex.volume_totals(series) == {
+        "total_call_gex_vol": 126000,
+        "total_put_gex_vol": 72000,
+        "net_gex_vol": 54000,
+    }
